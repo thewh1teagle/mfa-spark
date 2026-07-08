@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TextGrid Viewer</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1d2026; --border: #2c313a;
+    --text: #e6e9ee; --dim: #8b93a1;
+    --accent: #4ea1ff; --word: #2f6db35c; --phone: #3a854f5c;
+    --hl: #ffd24d;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: system-ui, sans-serif; background: var(--bg); color: var(--text);
+    height: 100vh; display: flex; overflow: hidden;
+  }
+  #main { flex: 1; display: flex; flex-direction: column; padding: 14px; gap: 10px; min-width: 0; }
+  #sidebar {
+    width: 320px; border-left: 1px solid var(--border); background: var(--panel);
+    display: flex; flex-direction: column;
+  }
+  #sidebar input {
+    margin: 10px; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); outline: none;
+  }
+  #list { overflow-y: auto; flex: 1; }
+  .item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border); }
+  .item:hover { background: #262b33; }
+  .item.active { background: #2a3646; }
+  .item .id { color: var(--accent); font-weight: 600; font-size: 12px; }
+  .item .tx { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #title { font-size: 14px; color: var(--dim); }
+  #title b { color: var(--text); }
+  canvas { width: 100%; display: block; border-radius: 6px; background: var(--panel); }
+  #wave { height: 180px; }
+  #tiers { height: 110px; cursor: pointer; }
+  #controls { display: flex; gap: 10px; align-items: center; }
+  button {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    padding: 7px 16px; border-radius: 6px; cursor: pointer; font-size: 14px;
+  }
+  button:hover { border-color: var(--accent); }
+  #nowplaying { color: var(--hl); font-size: 20px; min-width: 120px; font-weight: 600; }
+  #transcript { color: var(--dim); font-size: 15px; line-height: 1.5; overflow-y: auto; max-height: 90px; }
+  #transcript span.w { cursor: pointer; padding: 1px 3px; border-radius: 4px; }
+  #transcript span.w:hover { background: #2a3646; }
+  #transcript span.w.hl { background: var(--hl); color: #000; }
+  #status { color: var(--dim); font-size: 12px; }
+  kbd { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; }
+</style>
+</head>
+<body>
+<div id="main">
+  <div id="title">no file loaded</div>
+  <canvas id="wave"></canvas>
+  <canvas id="tiers"></canvas>
+  <div id="controls">
+    <button id="playBtn">▶ play</button>
+    <div id="nowplaying"></div>
+    <div id="status">click a phone/word box to play it · <kbd>←</kbd><kbd>→</kbd> step phones · <kbd>space</kbd> play/pause</div>
+  </div>
+  <div id="transcript"></div>
+</div>
+<div id="sidebar">
+  <input id="search" placeholder="filter utterances…">
+  <div id="list"></div>
+</div>
+
+<script>
+"use strict";
+// ---------- config: where files live, relative to docs/ ----------
+const SOURCES = {
+  sample: { wav: "../plans/sample/01.wav", tg: "../plans/sample/01.TextGrid", label: "smoke-test sample" },
+  corpusWav: id => `../data/corpus/michael/${id}.wav`,
+  // MFA writes output/<speaker>/<id>.TextGrid; try both layouts
+  corpusTg: id => [`../runs/michael/output/michael/${id}.TextGrid`, `../runs/michael/output/${id}.TextGrid`],
+  metadata: "../data/michael-he/he/metadata.csv",
+};
+
+// ---------- TextGrid parser (long format) ----------
+function parseTextGrid(text) {
+  const tiers = [];
+  let cur = null, iv = null;
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    let m;
+    if ((m = line.match(/^name = "(.*)"/))) { cur = { name: m[1], intervals: [] }; tiers.push(cur); }
+    else if (/^intervals \[\d+\]/.test(line)) { iv = {}; cur.intervals.push(iv); }
+    else if (iv && (m = line.match(/^xmin = ([\d.eE+-]+)/))) iv.start = +m[1];
+    else if (iv && (m = line.match(/^xmax = ([\d.eE+-]+)/))) iv.end = +m[1];
+    else if (iv && (m = line.match(/^text = "(.*)"/))) { iv.label = m[1]; iv = null; }
+  }
+  return tiers;
+}
+
+// ---------- state ----------
+const ctx2d = c => c.getContext("2d");
+const waveC = document.getElementById("wave"), tiersC = document.getElementById("tiers");
+let audioCtx, buffer = null, tiers = [], duration = 0;
+let playing = null;   // {source, startedAt, offset, until}
+let curPhoneIdx = -1;
+let stressedWords = [];
+
+function phones() { return (tiers.find(t => /phone/i.test(t.name)) || { intervals: [] }).intervals.filter(i => i.label); }
+function words()  { return (tiers.find(t => /word/i.test(t.name))  || { intervals: [] }).intervals.filter(i => i.label); }
+
+// ---------- drawing ----------
+function fitCanvas(c) {
+  const r = c.getBoundingClientRect();
+  c.width = r.width * devicePixelRatio; c.height = r.height * devicePixelRatio;
+  ctx2d(c).scale(devicePixelRatio, devicePixelRatio);
+  return r;
+}
+function drawWave(playhead) {
+  const r = fitCanvas(waveC), g = ctx2d(waveC), W = r.width, H = r.height;
+  g.clearRect(0, 0, W, H);
+  if (!buffer) return;
+  const data = buffer.getChannelData(0), step = Math.ceil(data.length / W);
+  g.strokeStyle = "#5f9bd6"; g.beginPath();
+  for (let x = 0; x < W; x++) {
+    let min = 1, max = -1;
+    for (let i = x * step; i < (x + 1) * step && i < data.length; i++) {
+      if (data[i] < min) min = data[i]; if (data[i] > max) max = data[i];
+    }
+    g.moveTo(x, H / 2 + min * H * 0.48); g.lineTo(x, H / 2 + max * H * 0.48);
+  }
+  g.stroke();
+  // phone boundaries
+  g.strokeStyle = "#ffffff22";
+  for (const p of phones()) {
+    const x = p.start / duration * W;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
+  }
+  if (playhead != null) {
+    g.strokeStyle = "#ffd24d"; g.lineWidth = 2;
+    const x = playhead / duration * W;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); g.lineWidth = 1;
+  }
+}
+function drawTiers(playhead) {
+  const r = fitCanvas(tiersC), g = ctx2d(tiersC), W = r.width, H = r.height;
+  g.clearRect(0, 0, W, H);
+  if (!tiers.length) return;
+  const rows = [
+    { ivs: words(), y: 0, h: H / 2, fill: getComputedStyle(document.body).getPropertyValue("--word") },
+    { ivs: phones(), y: H / 2, h: H / 2, fill: getComputedStyle(document.body).getPropertyValue("--phone") },
+  ];
+  g.textAlign = "center"; g.textBaseline = "middle";
+  for (const row of rows) {
+    for (const iv of row.ivs) {
+      const x = iv.start / duration * W, w = (iv.end - iv.start) / duration * W;
+      const active = playhead != null && playhead >= iv.start && playhead < iv.end;
+      g.fillStyle = active ? "#ffd24d" : row.fill;
+      g.fillRect(x + 0.5, row.y + 2, w - 1, row.h - 4);
+      g.strokeStyle = "#00000055"; g.strokeRect(x + 0.5, row.y + 2, w - 1, row.h - 4);
+      g.fillStyle = active ? "#000" : "#e6e9ee";
+      g.font = row.h > 40 ? "14px system-ui" : "12px system-ui";
+      if (w > 14) g.fillText(iv.label, x + w / 2, row.y + row.h / 2, w - 4);
+    }
+  }
+}
+function redraw(playhead) { drawWave(playhead); drawTiers(playhead); highlightWord(playhead); updateNow(playhead); }
+
+function highlightWord(t) {
+  const ws = words();
+  document.querySelectorAll("#transcript .w").forEach((el, i) => {
+    el.classList.toggle("hl", t != null && ws[i] && t >= ws[i].start && t < ws[i].end);
+  });
+}
+function updateNow(t) {
+  const el = document.getElementById("nowplaying");
+  if (t == null) { el.textContent = ""; return; }
+  const p = phones().find(p => t >= p.start && t < p.end);
+  el.textContent = p ? p.label : "";
+}
+
+// ---------- playback ----------
+function stop() {
+  if (playing) { try { playing.source.stop(); } catch (e) {} playing = null; }
+  document.getElementById("playBtn").textContent = "▶ play";
+  redraw(null);
+}
+function playRange(start, end) {
+  if (!buffer) return;
+  stop();
+  audioCtx = audioCtx || new AudioContext();
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffer; src.connect(audioCtx.destination);
+  src.start(0, start, end - start);
+  playing = { source: src, startedAt: audioCtx.currentTime, offset: start, until: end };
+  src.onended = () => { if (playing && playing.source === src) stop(); };
+  document.getElementById("playBtn").textContent = "⏸ stop";
+  requestAnimationFrame(tick);
+}
+function tick() {
+  if (!playing) return;
+  const t = playing.offset + (audioCtx.currentTime - playing.startedAt);
+  redraw(Math.min(t, playing.until));
+  requestAnimationFrame(tick);
+}
+
+// ---------- interactions ----------
+tiersC.addEventListener("click", e => {
+  const r = tiersC.getBoundingClientRect();
+  const t = (e.clientX - r.left) / r.width * duration;
+  const row = (e.clientY - r.top) < r.height / 2 ? words() : phones();
+  const iv = row.find(i => t >= i.start && t < i.end);
+  if (iv) { curPhoneIdx = phones().indexOf(iv); playRange(iv.start, iv.end); }
+});
+waveC.addEventListener("click", e => {
+  const r = waveC.getBoundingClientRect();
+  const t = (e.clientX - r.left) / r.width * duration;
+  playRange(t, duration);
+});
+document.getElementById("playBtn").onclick = () => playing ? stop() : playRange(0, duration);
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  const ps = phones();
+  if (e.code === "Space") { e.preventDefault(); playing ? stop() : playRange(0, duration); }
+  else if (e.code === "ArrowRight" || e.code === "ArrowLeft") {
+    e.preventDefault();
+    curPhoneIdx = Math.min(ps.length - 1, Math.max(0, curPhoneIdx + (e.code === "ArrowRight" ? 1 : -1)));
+    const p = ps[curPhoneIdx];
+    if (p) playRange(p.start, p.end);
+  }
+});
+window.addEventListener("resize", () => redraw(null));
+
+// ---------- loading ----------
+async function fetchFirst(urls) {
+  for (const u of [].concat(urls)) {
+    const res = await fetch(u);
+    if (res.ok) return res;
+  }
+  throw new Error("not found: " + urls);
+}
+async function load(entry) {
+  stop();
+  document.getElementById("title").innerHTML = `loading <b>${entry.label}</b>…`;
+  try {
+    const [tgRes, wavRes] = await Promise.all([fetchFirst(entry.tg), fetchFirst(entry.wav)]);
+    tiers = parseTextGrid(await tgRes.text());
+    audioCtx = audioCtx || new AudioContext();
+    buffer = await audioCtx.decodeAudioData(await wavRes.arrayBuffer());
+    duration = buffer.duration;
+    curPhoneIdx = -1;
+    const tr = document.getElementById("transcript");
+    tr.innerHTML = "";
+    const ws = words(), stressed = entry.stressed ? entry.stressed.split(/\s+/) : null;
+    ws.forEach((w, i) => {
+      const span = document.createElement("span");
+      span.className = "w";
+      span.textContent = (stressed && stressed[i]) || w.label;
+      span.onclick = () => playRange(w.start, w.end);
+      tr.appendChild(span); tr.appendChild(document.createTextNode(" "));
+    });
+    document.getElementById("title").innerHTML =
+      `<b>${entry.label}</b> — ${duration.toFixed(2)}s · ${ws.length} words · ${phones().length} phones`;
+    redraw(null);
+  } catch (err) {
+    document.getElementById("title").innerHTML =
+      `<b>${entry.label}</b> — failed to load (${err.message}). TextGrid not exported yet?`;
+    tiers = []; buffer = null; redraw(null);
+  }
+}
+
+// ---------- sidebar ----------
+const entries = [{ id: "sample", label: SOURCES.sample.label, tg: SOURCES.sample.tg, wav: SOURCES.sample.wav, stressed: null }];
+async function buildSidebar() {
+  try {
+    const res = await fetch(SOURCES.metadata);
+    if (res.ok) {
+      for (const line of (await res.text()).split("\n")) {
+        const i = line.indexOf("|");
+        if (i < 0) continue;
+        const id = line.slice(0, i), text = line.slice(i + 1);
+        entries.push({ id, label: `#${id}`, tg: SOURCES.corpusTg(id), wav: SOURCES.corpusWav(id),
+                       stressed: text.replace(/[,.?!;:"()–—-]/g, "") });
+      }
+    }
+  } catch (e) { /* metadata not served; sample only */ }
+  renderList("");
+}
+function renderList(filter) {
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  const f = filter.toLowerCase();
+  let shown = 0;
+  for (const e of entries) {
+    if (f && !e.label.includes(f) && !(e.stressed || "").includes(f)) continue;
+    if (++shown > 400) break; // keep DOM small; use filter to narrow
+    const div = document.createElement("div");
+    div.className = "item"; div.dataset.id = e.id;
+    div.innerHTML = `<div class="id">${e.label}</div><div class="tx">${e.stressed || ""}</div>`;
+    div.onclick = () => {
+      document.querySelectorAll(".item.active").forEach(x => x.classList.remove("active"));
+      div.classList.add("active");
+      load(e);
+    };
+    list.appendChild(div);
+  }
+}
+document.getElementById("search").addEventListener("input", e => renderList(e.target.value));
+
+buildSidebar().then(() => load(entries[0]));
+</script>
+</body>
+</html>

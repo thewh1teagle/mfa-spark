@@ -102,8 +102,12 @@ let playing = null;   // {source, startedAt, offset, until}
 let curPhoneIdx = -1;
 let stressedWords = [];
 
-function phones() { return (tiers.find(t => /phone/i.test(t.name)) || { intervals: [] }).intervals.filter(i => i.label); }
-function words()  { return (tiers.find(t => /word/i.test(t.name))  || { intervals: [] }).intervals.filter(i => i.label); }
+// *All() include empty (silence) intervals — used for drawing.
+// The unsuffixed accessors keep labeled-only intervals — used for playback/stepping.
+function phonesAll() { return (tiers.find(t => /phone/i.test(t.name)) || { intervals: [] }).intervals; }
+function wordsAll()  { return (tiers.find(t => /word/i.test(t.name))  || { intervals: [] }).intervals; }
+function phones() { return phonesAll().filter(i => i.label); }
+function words()  { return wordsAll().filter(i => i.label); }
 
 // ---------- drawing ----------
 function fitCanvas(c) {
@@ -143,20 +147,28 @@ function drawTiers(playhead) {
   g.clearRect(0, 0, W, H);
   if (!tiers.length) return;
   const rows = [
-    { ivs: words(), y: 0, h: H / 2, fill: getComputedStyle(document.body).getPropertyValue("--word") },
-    { ivs: phones(), y: H / 2, h: H / 2, fill: getComputedStyle(document.body).getPropertyValue("--phone") },
+    { ivs: wordsAll(), y: 0, h: H / 2, fill: getComputedStyle(document.body).getPropertyValue("--word") },
+    { ivs: phonesAll(), y: H / 2, h: H / 2, fill: getComputedStyle(document.body).getPropertyValue("--phone") },
   ];
   g.textAlign = "center"; g.textBaseline = "middle";
   for (const row of rows) {
     for (const iv of row.ivs) {
       const x = iv.start / duration * W, w = (iv.end - iv.start) / duration * W;
       const active = playhead != null && playhead >= iv.start && playhead < iv.end;
-      g.fillStyle = active ? "#ffd24d" : row.fill;
+      const empty = !iv.label;
+      // silence intervals: dim hatched fill + "sil" so they read as intentional, not missing
+      g.fillStyle = active ? "#ffd24d" : (empty ? "#ffffff10" : row.fill);
       g.fillRect(x + 0.5, row.y + 2, w - 1, row.h - 4);
       g.strokeStyle = "#00000055"; g.strokeRect(x + 0.5, row.y + 2, w - 1, row.h - 4);
-      g.fillStyle = active ? "#000" : "#e6e9ee";
-      g.font = row.h > 40 ? "14px system-ui" : "12px system-ui";
-      if (w > 14) g.fillText(iv.label, x + w / 2, row.y + row.h / 2, w - 4);
+      // label: shrink font to fit narrow boxes so short phones are never blank
+      const label = empty ? "sil" : iv.label;
+      let fs = row.h > 40 ? 14 : 12;
+      g.font = fs + "px system-ui";
+      while (fs > 6 && g.measureText(label).width > w - 2) { fs -= 1; g.font = fs + "px system-ui"; }
+      if (g.measureText(label).width <= w - 1 && w > 3) {
+        g.fillStyle = active ? "#000" : (empty ? "#ffffff44" : "#e6e9ee");
+        g.fillText(label, x + w / 2, row.y + row.h / 2);
+      }
     }
   }
 }

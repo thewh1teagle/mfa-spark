@@ -1,0 +1,52 @@
+diff --git a/extensions/fstext/_pywrapfst.h b/extensions/fstext/_pywrapfst.h
+new file mode 100644
+index 0000000..12f1c56
+--- /dev/null
++++ b/extensions/fstext/_pywrapfst.h
+@@ -0,0 +1,46 @@
++#ifndef KALPY_LOCAL_PYWRAPFST_COMPAT_H_
++#define KALPY_LOCAL_PYWRAPFST_COMPAT_H_
++
++#include <Python.h>
++
++#include <memory>
++
++#include "fst/fstlib.h"
++#include "fst/script/fst-class.h"
++
++struct __pyx_vtabstruct_10_pywrapfst_SymbolTableView;
++struct __pyx_vtabstruct_10_pywrapfst_Fst;
++
++struct __pyx_obj_10_pywrapfst_SymbolTableView {
++  PyObject_HEAD
++  struct __pyx_vtabstruct_10_pywrapfst_SymbolTableView *__pyx_vtab;
++};
++
++struct __pyx_obj_10_pywrapfst__MutableSymbolTable {
++  struct __pyx_obj_10_pywrapfst_SymbolTableView __pyx_base;
++};
++
++struct __pyx_obj_10_pywrapfst_SymbolTable {
++  struct __pyx_obj_10_pywrapfst__MutableSymbolTable __pyx_base;
++  std::unique_ptr<fst::SymbolTable> _smart_table;
++};
++
++struct __pyx_obj_10_pywrapfst_Fst {
++  PyObject_HEAD
++  struct __pyx_vtabstruct_10_pywrapfst_Fst *__pyx_vtab;
++  std::shared_ptr<fst::script::FstClass> _fst;
++};
++
++struct __pyx_obj_10_pywrapfst_MutableFst {
++  struct __pyx_obj_10_pywrapfst_Fst __pyx_base;
++  std::shared_ptr<fst::script::MutableFstClass> _mfst;
++};
++
++struct __pyx_obj_10_pywrapfst_VectorFst {
++  struct __pyx_obj_10_pywrapfst_MutableFst __pyx_base;
++};
++
++using VectorFstObject = struct __pyx_obj_10_pywrapfst_VectorFst;
++using SymbolTableObject = struct __pyx_obj_10_pywrapfst_SymbolTable;
++
++#endif  // KALPY_LOCAL_PYWRAPFST_COMPAT_H_

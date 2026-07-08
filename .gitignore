@@ -1,0 +1,34 @@
+# Generated build outputs
+.venv/
+opt/
+src/
+logs/
+runs/
+
+# Keep plans documentation, ignore generated/reference payloads there
+plans/**
+!plans/
+!plans/**/
+!plans/**/*.md
+
+# Python/cache noise
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Native build leftovers
+*.o
+*.a
+*.so
+*.so.*
+*.la
+*.lo
+.libs/
+autom4te.cache/
+
+# Local/editor noise
+.DS_Store
+*~
+*.swp

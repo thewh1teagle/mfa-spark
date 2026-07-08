@@ -1,0 +1,2 @@
+hebrew phonemes:
+abdefhijklmnopstuvwzɡʁʃʒʔˈχ

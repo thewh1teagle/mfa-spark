@@ -1,0 +1,12 @@
+features:
+  type: mfcc
+  use_energy: false
+training:
+  - monophone:
+      num_iterations: 5
+      max_gaussians: 120
+      subset: 24
+  - triphone:
+      num_iterations: 5
+      max_gaussians: 160
+      subset: 24

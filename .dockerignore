@@ -1,0 +1,8 @@
+.venv
+opt
+src
+logs
+runs
+*.pyc
+__pycache__
+.git

@@ -32,3 +32,4 @@ autom4te.cache/
 .DS_Store
 *~
 *.swp
+data/

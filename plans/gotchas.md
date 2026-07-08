@@ -699,3 +699,37 @@ Install `sqlite3` in the Docker runtime layer and list it as a host runtime requ
 Verification:
 
 The Docker runtime rebuild completed successfully, reusing all expensive compile layers. The Docker smoke test then passed under `docker run --gpus all`, training the sample overfit model, running `mfa align`, and writing a host-visible `runs/docker-smoke-out/01.TextGrid`.
+
+## 27. Kalpy linked CUDA libraries but reported `CudaCompiled: False`
+
+Evidence:
+
+The Docker image linked `_kalpy` against CUDA libraries and `docker run --gpus all` exposed the GPU, but the Kalpy CUDA probe reported:
+
+```text
+CudaCompiled: False
+```
+
+`nvidia-smi` also showed no MFA/Kaldi compute process during the tiny GMM overfit smoke test. That smoke workflow is CPU-bound, so it is not a reliable proof of GPU execution.
+
+Impact:
+
+The build could appear CUDA-linked while Kalpy's C++ extension was compiled without `HAVE_CUDA`, making its CUDA wrapper report false and compile out GPU code paths. This hid the difference between "CUDA libraries are linked" and "Kalpy was compiled with CUDA macros enabled."
+
+Fix/workaround:
+
+Patch Kalpy's CMake build to define `HAVE_CUDA=1` and add CUDAToolkit include directories when CUDA is found. The CUDA include dirs are required once `HAVE_CUDA` causes Kaldi CUDA headers to include `cublas_v2.h`.
+
+Kalpy also called a stale `CuDevice::SelectGpuDevice` method. This Kaldi checkout only exposes public `CuDevice::SelectGpuId(std::string)`, so the compatibility patch maps Kalpy's Python-facing `SelectGpuDevice(device_id)` wrapper to `SelectGpuId(device_id < 0 ? "no" : "yes")`.
+
+Verification:
+
+After rebuilding the host Python stack, this probe passed:
+
+```text
+CudaCompiled: True
+SelectGpuId yes:
+selected
+```
+
+Docker verification pending rebuild.

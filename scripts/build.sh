@@ -152,7 +152,7 @@ stage_kalpy_kaldi_root() {
 }
 
 build_python_stack() {
-  uv venv --python "$PYTHON_VERSION" "$ROOT/.venv"
+  uv venv --allow-existing --python "$PYTHON_VERSION" "$ROOT/.venv"
   source "$ROOT/.venv/bin/activate"
   uv pip install --upgrade pip setuptools wheel setuptools_scm cython pybind11 ninja cmake
 

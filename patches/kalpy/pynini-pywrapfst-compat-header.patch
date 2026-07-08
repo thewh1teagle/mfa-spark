@@ -1,3 +1,29 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index b043dae..c9d2822 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -89,6 +89,8 @@ include_directories(extensions)
+                                         fstscript
+                                         )
+ if (CUDAToolkit_FOUND)
++    target_compile_definitions(_kalpy PUBLIC HAVE_CUDA=1)
++    target_include_directories(_kalpy PUBLIC ${CUDAToolkit_INCLUDE_DIRS})
+ 
+     find_library(KALDI_CUDADECODER kaldi-cudadecoder)
+ 
+diff --git a/extensions/cudamatrix/cudamatrix.cpp b/extensions/cudamatrix/cudamatrix.cpp
+index c66f929..11d7d7e 100644
+--- a/extensions/cudamatrix/cudamatrix.cpp
++++ b/extensions/cudamatrix/cudamatrix.cpp
+@@ -8,7 +8,7 @@ void init_cudamatrix(py::module &_m) {
+     m.def("SelectGpuDevice",
+         [](int device_id) {
+ #if HAVE_CUDA == 1
+-          CuDevice::Instantiate().SelectGpuDevice(device_id);
++          CuDevice::Instantiate().SelectGpuId(device_id < 0 ? "no" : "yes");
+ #else
+           KALDI_LOG << "Kaldi is NOT compiled with GPU! Ignore it.";
+ #endif
 diff --git a/extensions/fstext/_pywrapfst.h b/extensions/fstext/_pywrapfst.h
 new file mode 100644
 index 0000000..12f1c56

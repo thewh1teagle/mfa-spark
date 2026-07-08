@@ -733,3 +733,83 @@ selected
 ```
 
 Docker verification pending rebuild.
+
+## 28. Final SAT alignment collection can fail from dangling relative symlinks
+
+Evidence:
+
+Full `mfa train` reached the end of acoustic training:
+
+```text
+sat - Iteration 35 of 35
+Training complete!
+Compiling training graphs...
+Generating alignments...
+Collecting phone and word alignments from sat_ali lattices...
+```
+
+Then it failed during SQLite interval import:
+
+```text
+sqlite3.OperationalError: no such table: word_interval_temp
+[SQL: INSERT INTO word_interval SELECT * from word_interval_temp]
+```
+
+Read-only inspection showed the final SAT interval CSVs were effectively empty:
+
+```text
+runs/michael/temp/corpus/sat_ali/word_intervals.csv   1 line
+runs/michael/temp/corpus/sat_ali/phone_intervals.csv  1 line
+```
+
+Earlier stages had normal interval CSVs:
+
+```text
+runs/michael/temp/corpus/triphone_ali/word_intervals.csv   195156 lines
+runs/michael/temp/corpus/triphone_ali/phone_intervals.csv  882272 lines
+```
+
+The final SAT alignment files were dangling symlinks:
+
+```text
+runs/michael/temp/corpus/sat_ali/ali.dictionary_no_stress.1.ark
+  -> runs/michael/temp/corpus/sat_ali/ali_first_pass.dictionary_no_stress.1.ark
+```
+
+Because the target is a relative path stored inside `sat_ali/`, it resolves as:
+
+```text
+runs/michael/temp/corpus/sat_ali/runs/michael/temp/corpus/sat_ali/ali_first_pass.dictionary_no_stress.1.ark
+```
+
+which does not exist. The real file exists next to the symlink:
+
+```text
+runs/michael/temp/corpus/sat_ali/ali_first_pass.dictionary_no_stress.1.ark
+```
+
+Impact:
+
+Training itself completed and the SAT model artifacts exist. The failure is in the final alignment collection/export step, so do not assume the whole acoustic training run must be repeated. Avoid rerunning `mfa train --clean` until the existing temp artifacts are either recovered or deliberately discarded.
+
+Fix/workaround:
+
+Always pass `--temporary_directory` as an absolute path:
+
+```bash
+--temporary_directory "$(pwd)/runs/michael/temp"
+```
+
+The bug is triggered by relative temp directories. During the SAT first-pass-to-final step, MFA writes symlink targets using the current working directory relative path, but creates the symlink inside `sat_ali/`, so the target resolves from the wrong base. Absolute paths resolve correctly regardless of where the symlink lives.
+
+For workflow safety, prefer configuring MFA with an absolute global temp directory or using a wrapper that rewrites/refuses relative temp paths:
+
+```bash
+mfa configure --temporary_directory /home/yakov/Documents/mfa-spark/runs/mfa-temp
+```
+
+For an already-failed run, likely recovery is to replace the dangling `sat_ali/ali.dictionary_no_stress.*.ark` symlinks with valid local symlinks or copies to the existing `ali_first_pass.dictionary_no_stress.*.ark` files, then rerun only final alignment collection/export if MFA exposes a safe path for that. Another option is to run `mfa align` using the trained SAT model artifact once it is packaged or recoverable.
+
+Verification:
+
+Pending recovery/export run.

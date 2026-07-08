@@ -45,7 +45,7 @@ Run validation before full training:
 
 ```bash
 mfa validate data/corpus data/dictionary_no_stress.txt \
-  --temporary_directory runs/michael/temp \
+  --temporary_directory "$(pwd)/runs/michael/temp" \
   --single_speaker \
   --num_jobs "$(nproc)" \
   2>&1 | tee logs/michael-validate.log
@@ -69,7 +69,7 @@ Use MFA's default acoustic training pipeline for the real run. Do not reuse the 
 mfa train data/corpus data/dictionary_no_stress.txt \
   runs/michael/models/michael_he.zip \
   --output_directory runs/michael/output \
-  --temporary_directory runs/michael/temp \
+  --temporary_directory "$(pwd)/runs/michael/temp" \
   --single_speaker \
   --num_jobs "$(nproc)" \
   --clean \
@@ -82,6 +82,8 @@ Outputs:
 - acoustic model: `runs/michael/models/michael_he.zip`
 - aligned TextGrids: `runs/michael/output/`
 - logs/temp files: `runs/michael/temp/`
+
+Always pass `--temporary_directory` as an absolute path. With a relative temporary directory, MFA can create dangling SAT alignment symlinks during the final first-pass-to-final SAT step, which can make interval collection fail after training has already completed.
 
 ## Single-Speaker Training
 

@@ -93,7 +93,7 @@ build_openfst_stack() {
 
 build_kaldi() {
   clone_at_commit "$KALDI_REPO" "$KALDI_COMMIT" "$KALDI_ROOT"
-  apply_repo_patch "$KALDI_ROOT" "$ROOT/patches/kaldi/cuda13-gb10-and-kalpy-nnet2.patch"
+  apply_repo_patch "$KALDI_ROOT" "$ROOT/patches/kaldi/kalpy-nnet2-objects.patch"
 
   mkdir -p "$KALDI_ROOT/tools/python"
   (
@@ -113,7 +113,7 @@ build_kaldi() {
   (
     cd "$KALDI_ROOT/src"
     ./configure --shared --mathlib=OPENBLAS --openblas-root=../tools/OpenBLAS/install \
-      --use-cuda=yes --cudatk-dir="$CUDA_HOME"
+      --use-cuda=no
     make depend -j"$(nproc)"
     make -j"$(nproc)"
   )

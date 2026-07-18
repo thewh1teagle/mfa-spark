@@ -9,7 +9,7 @@ source "$ROOT/.venv/bin/activate"
 
 python - <<'PY'
 import _kalpy
-from _kalpy import cudamatrix, fstext, gmm, nnet2
+from _kalpy import fstext, gmm, nnet2
 import pynini
 
 print("kalpy/pynini import ok", pynini.__version__)

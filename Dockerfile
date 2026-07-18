@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=nvidia/cuda:13.0.0-devel-ubuntu24.04
+ARG BASE_IMAGE=ubuntu:24.04
 FROM ${BASE_IMAGE} AS build-base
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     automake \
     bash \
     bison \
+    bzip2 \
     ca-certificates \
     cmake \
     curl \

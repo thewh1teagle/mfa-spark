@@ -3,6 +3,11 @@ opt
 src
 logs
 runs
+data
+remix-tts
+plans
+oplans
+docs
 *.pyc
 __pycache__
 .git

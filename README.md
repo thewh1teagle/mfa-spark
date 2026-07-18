@@ -59,6 +59,12 @@ plans/sample/01.TextGrid
 
 That TextGrid is generated output and is intentionally ignored.
 
+## LJSpeech Training Time
+
+Training the stress-free IPA aligner on all 13,093 LJSpeech utterances (about
+23.9 hours of audio) takes approximately 40–45 minutes on a 20-core ARM64
+DGX Spark using `--num_jobs 20`. Timing varies with CPU, storage, and job count.
+
 ## Docker
 
 Build the image:
